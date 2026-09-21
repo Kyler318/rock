@@ -10,73 +10,83 @@
     :root { --bg:#141824; --card:#1e2436; --text:#eef1f8; --muted:#9aa3b8; }
   }
   * { box-sizing: border-box; }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,"PingFang HK","Microsoft JhengHei",sans-serif; }
-  main { max-width:560px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
-  h1 { margin:0; text-align:center; font-size:1.6rem; }
-  .card { background:var(--card); border-radius:16px; padding:14px; box-shadow:0 2px 8px rgba(0,0,0,.08); }
-  .score { display:flex; justify-content:space-around; text-align:center; }
-  .score b { display:block; font-size:2rem; }
-  .score span { color:var(--muted); font-size:.9rem; }
-  .stage { position:relative; aspect-ratio:1/1; background:#000; border-radius:12px; overflow:hidden; }
-  .stage canvas { width:100%; height:100%; display:block; transform:scaleX(-1); }
-  .overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:7rem; font-weight:800; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.7); pointer-events:none; }
-  .versus { display:flex; align-items:center; justify-content:space-around; font-size:4rem; text-align:center; min-height:6rem; }
-  .versus small { display:block; font-size:.9rem; color:var(--muted); }
-  .result { text-align:center; font-size:1.6rem; font-weight:800; min-height:2.2rem; }
-  .result.win{color:var(--win)} .result.lose{color:var(--lose)} .result.draw{color:var(--draw)}
-  .bars div { display:flex; align-items:center; gap:8px; margin:4px 0; }
-  .bars .name { width:2.5rem; }
-  .bars .track { flex:1; height:14px; background:rgba(128,128,128,.2); border-radius:7px; overflow:hidden; }
+  html, body { height:100%; }
+  body { margin:0; padding:8px 12px; background:var(--bg); color:var(--text); font:15px/1.4 system-ui,"PingFang HK","Microsoft JhengHei",sans-serif; overflow:hidden; }
+  /* 整頁固定為一屏高度,鏡頭區自動伸縮,不需要捲動 */
+  main { height:100%; max-width:640px; margin:0 auto; display:grid; grid-template-rows:auto minmax(0,1fr) auto auto; gap:8px;
+         grid-template-areas:"head" "stage" "bars" "ctrl"; }
+  .head { grid-area:head; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  h1 { margin:0; font-size:1.15rem; white-space:nowrap; }
+  .score { display:flex; gap:12px; font-size:.85rem; color:var(--muted); }
+  .score b { color:var(--text); font-size:1.1rem; margin-left:2px; }
+  .stage { grid-area:stage; position:relative; background:#000; border-radius:12px; overflow:hidden; min-height:0; }
+  .stage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; transform:scaleX(-1); }
+  .overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:min(30vw,7rem); font-weight:800; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.7); pointer-events:none; }
+  .status { position:absolute; left:0; right:0; top:0; padding:6px 10px; font-size:.85rem; color:#fff; background:linear-gradient(rgba(0,0,0,.6),transparent); text-align:center; }
+  .panel { position:absolute; left:8px; right:8px; bottom:8px; padding:8px 10px; border-radius:10px; background:rgba(20,24,36,.82); color:#fff; text-align:center; }
+  .versus { display:flex; align-items:center; justify-content:space-around; font-size:clamp(2rem,9vh,3.2rem); line-height:1.1; }
+  .versus small { display:block; font-size:.75rem; opacity:.7; }
+  .versus .vs { font-size:1rem; opacity:.8; }
+  .result { font-size:1.15rem; font-weight:800; }
+  .result.win{color:#4ade80} .result.lose{color:#ff7b7b} .result.draw{color:#fbbf24}
+  .detail { font-size:.8rem; opacity:.8; }
+  .bars { grid-area:bars; background:var(--card); border-radius:12px; padding:6px 10px; }
+  .bars div { display:flex; align-items:center; gap:8px; margin:2px 0; }
+  .bars .name { width:3rem; font-size:.9rem; }
+  .bars .track { flex:1; height:10px; background:rgba(128,128,128,.2); border-radius:5px; overflow:hidden; }
   .bars .fill { height:100%; width:0; background:var(--accent); transition:width .15s; }
-  .bars .pct { width:3.2rem; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
-  button { font:inherit; font-weight:700; padding:14px; border:0; border-radius:12px; background:var(--accent); color:#fff; width:100%; cursor:pointer; }
+  .bars .pct { width:2.8rem; text-align:right; color:var(--muted); font-size:.85rem; font-variant-numeric:tabular-nums; }
+  .ctrl { grid-area:ctrl; display:flex; gap:8px; align-items:stretch; padding-bottom:env(safe-area-inset-bottom,0px); }
+  button { font:inherit; font-weight:700; padding:12px; border:0; border-radius:12px; background:var(--accent); color:#fff; flex:1; cursor:pointer; }
   button:disabled { opacity:.5; }
-  select { font:inherit; padding:6px; border-radius:8px; }
-  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
-  .hint { color:var(--muted); font-size:.9rem; text-align:center; }
+  select { font:inherit; padding:0 8px; border-radius:12px; border:1px solid rgba(128,128,128,.4); background:var(--card); color:var(--text); max-width:42%; }
+  [hidden] { display:none !important; }
+  /* 橫屏手機 / 寬螢幕:鏡頭在左,資訊在右 */
+  @media (orientation:landscape) and (max-height:520px), (min-width:900px) and (orientation:landscape) {
+    main { max-width:1000px; grid-template-columns:minmax(0,1fr) 300px; grid-template-rows:auto auto minmax(0,1fr);
+           grid-template-areas:"stage head" "stage bars" "stage ctrl"; align-content:start; }
+    .ctrl { flex-direction:column; }
+    select { max-width:none; padding:10px; }
+    .head { flex-direction:column; align-items:flex-start; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>✊✋✌️ AI 包剪揼</h1>
-
-  <div class="card score">
-    <div><b id="sWin">0</b><span>你贏</span></div>
-    <div><b id="sDraw">0</b><span>平手</span></div>
-    <div><b id="sLose">0</b><span>AI 贏</span></div>
-  </div>
-
-  <div class="card">
-    <div class="stage">
-      <canvas id="cam" width="400" height="400"></canvas>
-      <div class="overlay" id="overlay"></div>
+  <div class="head">
+    <h1>✊✋✌️ AI 包剪揼</h1>
+    <div class="score">
+      <span>你贏<b id="sWin">0</b></span>
+      <span>平手<b id="sDraw">0</b></span>
+      <span>AI贏<b id="sLose">0</b></span>
     </div>
-    <p class="hint" id="status">按「開始」載入 AI 並開啟鏡頭</p>
   </div>
 
-  <div class="card versus" id="versus" hidden>
-    <div><span id="youEmoji"></span><small>你</small></div>
-    <div style="font-size:1.6rem">VS</div>
-    <div><span id="aiEmoji"></span><small>AI</small></div>
-  </div>
-  <div class="result" id="result"></div>
-
-  <div class="card bars" id="bars">
-    <div class="row"><b>AI 的判斷(信心度)</b></div>
-  </div>
-
-  <div class="card row">
-    <label>AI 出拳策略
-      <select id="mode">
-        <option value="random">隨機</option>
-        <option value="cheat">後出(作弊)</option>
-        <option value="learn">學習你的習慣</option>
-      </select>
-    </label>
+  <div class="stage">
+    <canvas id="cam" width="400" height="400"></canvas>
+    <div class="status" id="status">按「開始」載入 AI 並開啟鏡頭</div>
+    <div class="overlay" id="overlay"></div>
+    <div class="panel" id="panel" hidden>
+      <div class="versus" id="versus">
+        <div><span id="youEmoji"></span><small>你</small></div>
+        <div class="vs">VS</div>
+        <div><span id="aiEmoji"></span><small>AI</small></div>
+      </div>
+      <div class="result" id="result"></div>
+      <div class="detail" id="detail"></div>
+    </div>
   </div>
 
-  <button id="btn">開始</button>
-  <p class="hint">提示:手放在畫面中央、光線充足、背景簡單,辨識更準。</p>
+  <div class="bars" id="bars"></div>
+
+  <div class="ctrl">
+    <select id="mode" aria-label="AI 出拳策略">
+      <option value="random">AI:隨機</option>
+      <option value="cheat">AI:後出(作弊)</option>
+      <option value="learn">AI:學習習慣</option>
+    </select>
+    <button id="btn">開始</button>
+  </div>
 </main>
 
 <script src="lib/tf.min.js"></script>
@@ -156,11 +166,11 @@ async function loop() {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function aiPick(mode, playerMove) {
-  if (mode === 'cheat') return (playerMove + 2) % 3;           // 剛好贏
+  if (mode === 'cheat') return (playerMove + 1) % 3;           // 剛好贏
   if (mode === 'learn') {
     const likely = history.indexOf(Math.max(...history));      // 學生最常出的
     if (history.every(v => v === 0)) return Math.floor(Math.random()*3);
-    return (likely + 2) % 3;                                    // 出剋它的
+    return (likely + 1) % 3;                                    // 出剋它的
   }
   return Math.floor(Math.random()*3);
 }
@@ -174,7 +184,7 @@ function judge(you, ai) {
 async function play() {
   if (!ready || busy) return;
   busy = true; $('btn').disabled = true;
-  $('versus').hidden = true; $('result').textContent = ''; $('result').className = 'result';
+  $('panel').hidden = true; $('result').className = 'result';
 
   for (const t of ['3','2','1','出!']) {
     $('overlay').textContent = t;
@@ -190,11 +200,12 @@ async function play() {
     await sleep(50);
   }
   const you = best.indexOf(bestMax);
-  $('versus').hidden = false;
+  $('panel').hidden = false;
 
   if (bestMax < CONF_MIN) {
     $('youEmoji').textContent = '❓'; $('aiEmoji').textContent = '🤖';
-    $('result').textContent = 'AI 看不清你的手勢,再試一次';
+    $('result').textContent = 'AI 看不清你的手勢';
+    $('detail').textContent = '再試一次:手放中央、光線充足';
     $('result').className = 'result draw';
   } else {
     const ai = aiPick($('mode').value, you);
@@ -203,8 +214,8 @@ async function play() {
     score[r]++;
     $('youEmoji').textContent = MOVES[you].emoji;
     $('aiEmoji').textContent = MOVES[ai].emoji;
-    $('result').textContent = { win:'你贏了 🎉', lose:'AI 贏了 🤖', draw:'平手' }[r]
-      + `(AI 認為你出「${MOVES[you].name}」${(bestMax*100).toFixed(0)}%)`;
+    $('result').textContent = { win:'你贏了 🎉', lose:'AI 贏了 🤖', draw:'平手' }[r];
+    $('detail').textContent = `AI 認為你出「${MOVES[you].name}」,信心度 ${(bestMax*100).toFixed(0)}%`;
     $('result').className = 'result ' + r;
     $('sWin').textContent = score.win; $('sDraw').textContent = score.draw; $('sLose').textContent = score.lose;
   }
