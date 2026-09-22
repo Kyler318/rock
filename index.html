@@ -131,7 +131,8 @@ async function init() {
   $('btn').disabled = false;
   $('btn').textContent = '出拳!';
   $('status').textContent = '準備好了,按「出拳!」';
-  loop();
+  drawLoop();
+  startIdlePredict();
 }
 
 async function predict() {
@@ -152,15 +153,28 @@ function draw(probs) {
   });
 }
 
-let ticking = false;
-async function loop() {
+// 畫面更新(畫鏡頭)和 AI 辨識拆開:辨識比較耗運算,尤其手機沒有 WebGL 時
+// 會退回用 CPU 運算而變慢,如果每一幀都辨識會塞爆主執行緒,導致倒數動畫
+// 和按鈕都卡住沒反應。所以畫面用 requestAnimationFrame 保持流暢,
+// 辨識則用較低頻率的計時器,並且在倒數/出拳期間暫停,把運算力留給動畫。
+function drawLoop() {
   webcam.update();
   $('cam').getContext('2d').drawImage(webcam.canvas, 0, 0);
-  if (!ticking) {
-    ticking = true;
-    predict().then(p => { latest = p; draw(p); ticking = false; });
-  }
-  requestAnimationFrame(loop);
+  requestAnimationFrame(drawLoop);
+}
+
+let idleTimer = null, predicting = false;
+function startIdlePredict() {
+  stopIdlePredict();
+  idleTimer = setInterval(async () => {
+    if (predicting) return;
+    predicting = true;
+    try { const p = await predict(); latest = p; draw(p); }
+    finally { predicting = false; }
+  }, 200);
+}
+function stopIdlePredict() {
+  if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -184,42 +198,56 @@ function judge(you, ai) {
 async function play() {
   if (!ready || busy) return;
   busy = true; $('btn').disabled = true;
+  // 倒數期間暫停背景辨識,把運算力留給動畫,避免手機卡住
+  stopIdlePredict();
   $('panel').hidden = true; $('result').className = 'result';
 
-  for (const t of ['3','2','1','出!']) {
-    $('overlay').textContent = t;
-    await sleep(t === '出!' ? 300 : 800);
-  }
-  $('overlay').textContent = '';
+  try {
+    for (const t of ['3','2','1','出!']) {
+      $('overlay').textContent = t;
+      await sleep(t === '出!' ? 300 : 700);
+    }
+    $('overlay').textContent = '';
 
-  // 在「出!」後取樣約 0.5 秒,取信心度最高的一次
-  let best = [0,0,0], bestMax = 0;
-  const end = Date.now() + 500;
-  while (Date.now() < end) {
-    if (Math.max(...latest) > bestMax) { best = latest.slice(); bestMax = Math.max(...latest); }
-    await sleep(50);
-  }
-  const you = best.indexOf(bestMax);
-  $('panel').hidden = false;
+    // 「出!」後主動辨識幾次(而非等背景計時器),取信心度最高的一次
+    let best = [0,0,0], bestMax = 0;
+    for (let i = 0; i < 6; i++) {
+      const p = await predict();
+      latest = p; draw(p);
+      const m = Math.max(...p);
+      if (m > bestMax) { best = p; bestMax = m; }
+      await sleep(40);
+    }
+    const you = best.indexOf(bestMax);
+    $('panel').hidden = false;
 
-  if (bestMax < CONF_MIN) {
-    $('youEmoji').textContent = '❓'; $('aiEmoji').textContent = '🤖';
-    $('result').textContent = 'AI 看不清你的手勢';
-    $('detail').textContent = '再試一次:手放中央、光線充足';
+    if (bestMax < CONF_MIN) {
+      $('youEmoji').textContent = '❓'; $('aiEmoji').textContent = '🤖';
+      $('result').textContent = 'AI 看不清你的手勢';
+      $('detail').textContent = '再試一次:手放中央、光線充足';
+      $('result').className = 'result draw';
+    } else {
+      const ai = aiPick($('mode').value, you);
+      history[you]++;
+      const r = judge(you, ai);
+      score[r]++;
+      $('youEmoji').textContent = MOVES[you].emoji;
+      $('aiEmoji').textContent = MOVES[ai].emoji;
+      $('result').textContent = { win:'你贏了 🎉', lose:'AI 贏了 🤖', draw:'平手' }[r];
+      $('detail').textContent = `AI 認為你出「${MOVES[you].name}」,信心度 ${(bestMax*100).toFixed(0)}%`;
+      $('result').className = 'result ' + r;
+      $('sWin').textContent = score.win; $('sDraw').textContent = score.draw; $('sLose').textContent = score.lose;
+    }
+  } catch (e) {
+    $('overlay').textContent = '';
+    $('panel').hidden = false;
+    $('result').textContent = '出錯了,再試一次';
+    $('detail').textContent = e.message;
     $('result').className = 'result draw';
-  } else {
-    const ai = aiPick($('mode').value, you);
-    history[you]++;
-    const r = judge(you, ai);
-    score[r]++;
-    $('youEmoji').textContent = MOVES[you].emoji;
-    $('aiEmoji').textContent = MOVES[ai].emoji;
-    $('result').textContent = { win:'你贏了 🎉', lose:'AI 贏了 🤖', draw:'平手' }[r];
-    $('detail').textContent = `AI 認為你出「${MOVES[you].name}」,信心度 ${(bestMax*100).toFixed(0)}%`;
-    $('result').className = 'result ' + r;
-    $('sWin').textContent = score.win; $('sDraw').textContent = score.draw; $('sLose').textContent = score.lose;
+  } finally {
+    startIdlePredict();
+    busy = false; $('btn').disabled = false;
   }
-  busy = false; $('btn').disabled = false;
 }
 
 $('btn').addEventListener('click', () => ready ? play() : init());
