@@ -35,6 +35,7 @@
   .bars .name { width:3rem; font-size:.9rem; }
   .bars .track { flex:1; height:10px; background:rgba(128,128,128,.2); border-radius:5px; overflow:hidden; }
   .bars .fill { height:100%; width:0; background:var(--accent); transition:width .15s; }
+  .bars .fill.bg { background:var(--muted); }
   .bars .pct { width:2.8rem; text-align:right; color:var(--muted); font-size:.85rem; font-variant-numeric:tabular-nums; }
   .ctrl { grid-area:ctrl; display:flex; gap:8px; align-items:stretch; padding-bottom:env(safe-area-inset-bottom,0px); }
   button { font:inherit; font-weight:700; padding:12px; border:0; border-radius:12px; background:var(--accent); color:#fff; flex:1; cursor:pointer; }
@@ -92,27 +93,33 @@
 <script src="lib/tf.min.js"></script>
 <script src="lib/teachablemachine-image.min.js"></script>
 <script>
-// 類別順序必須和 Teachable Machine 訓練時一致(labels.txt: 0 包, 1 剪, 2 揼)
+// 手勢類別要和 Teachable Machine 訓練時的名稱一致(不依賴順序,用名稱比對)
 const MOVES = [
   { name: '包', emoji: '✋' },
   { name: '剪', emoji: '✌️' },
   { name: '揼', emoji: '✊' },
 ];
+const BG_NAME = '背景'; // 第 4 類:鏡頭裡沒有手勢時的「背景」類別
 const MODEL_URL = 'model/model.json';
 const META_URL  = 'model/metadata.json';
 const CONF_MIN  = 0.6; // 低於此信心度視為「看不清」
 
 const $ = id => document.getElementById(id);
-let model, webcam, ready = false, busy = false, latest = [0,0,0];
+let model, webcam, ready = false, busy = false, latest = { moves: [0,0,0], bg: 0 };
 const score = { win:0, draw:0, lose:0 };
 const history = [0,0,0]; // 學生出過各手勢的次數
 
-// 建立信心度條
+// 建立信心度條:3 個手勢 + 1 個「背景/無手勢」
 MOVES.forEach((m,i) => {
   const d = document.createElement('div');
   d.innerHTML = `<span class="name">${m.emoji}${m.name}</span><span class="track"><span class="fill" id="f${i}" style="display:block"></span></span><span class="pct" id="p${i}">0%</span>`;
   $('bars').appendChild(d);
 });
+{
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="name">🚫背景</span><span class="track"><span class="fill bg" id="fbg" style="display:block"></span></span><span class="pct" id="pbg">0%</span>`;
+  $('bars').appendChild(d);
+}
 
 async function init() {
   $('btn').disabled = true;
@@ -137,20 +144,24 @@ async function init() {
 
 async function predict() {
   const p = await model.predict(webcam.canvas);
-  // 依 className 對應,避免順序假設出錯
-  const out = [0,0,0];
+  // 依 className 對應,避免順序假設出錯;背景類別另外存放
+  const moves = [0,0,0];
+  let bg = 0;
   p.forEach(x => {
+    if (x.className.includes(BG_NAME)) { bg = x.probability; return; }
     const i = MOVES.findIndex(m => x.className.includes(m.name));
-    out[i >= 0 ? i : p.indexOf(x)] = x.probability;
+    if (i >= 0) moves[i] = x.probability;
   });
-  return out;
+  return { moves, bg };
 }
 
-function draw(probs) {
-  probs.forEach((v,i) => {
+function draw({ moves, bg }) {
+  moves.forEach((v,i) => {
     $('f'+i).style.width = (v*100).toFixed(0) + '%';
     $('p'+i).textContent = (v*100).toFixed(0) + '%';
   });
+  $('fbg').style.width = (bg*100).toFixed(0) + '%';
+  $('pbg').textContent = (bg*100).toFixed(0) + '%';
 }
 
 // 畫面更新(畫鏡頭)和 AI 辨識拆開:辨識比較耗運算,尤其手機沒有 WebGL 時
@@ -210,18 +221,24 @@ async function play() {
     $('overlay').textContent = '';
 
     // 「出!」後主動辨識幾次(而非等背景計時器),取信心度最高的一次
-    let best = [0,0,0], bestMax = 0;
+    let bestMoves = [0,0,0], bestMovesMax = 0, bestBg = 0;
     for (let i = 0; i < 6; i++) {
       const p = await predict();
       latest = p; draw(p);
-      const m = Math.max(...p);
-      if (m > bestMax) { best = p; bestMax = m; }
+      const m = Math.max(...p.moves);
+      if (m > bestMovesMax) { bestMoves = p.moves; bestMovesMax = m; }
+      if (p.bg > bestBg) bestBg = p.bg;
       await sleep(40);
     }
-    const you = best.indexOf(bestMax);
+    const you = bestMoves.indexOf(bestMovesMax);
     $('panel').hidden = false;
 
-    if (bestMax < CONF_MIN) {
+    if (bestBg > bestMovesMax) {
+      $('youEmoji').textContent = '❓'; $('aiEmoji').textContent = '🤖';
+      $('result').textContent = 'AI 沒看到手勢';
+      $('detail').textContent = '請把手放入鏡頭中央,再按一次「出拳!」';
+      $('result').className = 'result draw';
+    } else if (bestMovesMax < CONF_MIN) {
       $('youEmoji').textContent = '❓'; $('aiEmoji').textContent = '🤖';
       $('result').textContent = 'AI 看不清你的手勢';
       $('detail').textContent = '再試一次:手放中央、光線充足';
@@ -234,7 +251,7 @@ async function play() {
       $('youEmoji').textContent = MOVES[you].emoji;
       $('aiEmoji').textContent = MOVES[ai].emoji;
       $('result').textContent = { win:'你贏了 🎉', lose:'AI 贏了 🤖', draw:'平手' }[r];
-      $('detail').textContent = `AI 認為你出「${MOVES[you].name}」,信心度 ${(bestMax*100).toFixed(0)}%`;
+      $('detail').textContent = `AI 認為你出「${MOVES[you].name}」,信心度 ${(bestMovesMax*100).toFixed(0)}%`;
       $('result').className = 'result ' + r;
       $('sWin').textContent = score.win; $('sDraw').textContent = score.draw; $('sLose').textContent = score.lose;
     }
